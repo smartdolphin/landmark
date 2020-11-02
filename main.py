@@ -3,7 +3,6 @@
 import pandas as pd
 import numpy as np
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 import argparse
 import torch
@@ -43,8 +42,12 @@ parser.add_argument('--batch_size', dest='batch_size', type=int, default=64)
 
 parser.add_argument('--train', dest='train', type=bool, default=True)
 parser.add_argument('--load_epoch', dest='load_epoch', type=int, default=29)
-
+parser.add_argument('--gpu', type=str, default='0')
 args = parser.parse_args()
+
+
+# Set GPU
+os.environ["CUDA_VISIBLE_DEVICES"] = f'{args.gpu}'
 
 # 경로 생성
 if not os.path.isdir(args.model_dir) :
