@@ -40,7 +40,7 @@ parser.add_argument('--learning_rate', dest='learning_rate', type=float, default
 parser.add_argument('--wd', dest='wd', type=float, default=1e-5)
 parser.add_argument('--batch_size', dest='batch_size', type=int, default=64)
 
-parser.add_argument('--train', dest='train', type=bool, default=True)
+parser.add_argument('--test', dest='test', action='store_true')
 parser.add_argument('--load_epoch', dest='load_epoch', type=int, default=29)
 parser.add_argument('--gpu', type=str, default='0')
 args = parser.parse_args()
@@ -167,7 +167,7 @@ def collate_fn_test(batch) :
 train_dataset = TrainDataset(args)
 test_dataset = TestDataset(args)
 train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, collate_fn=collate_fn)
-test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=False, collate_fn=collate_fn_test)
+test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, collate_fn=collate_fn_test)
 
 # Model
 # 여기서는 간단한 CNN 3개짜리 모델을 생성하였습니다.
@@ -196,7 +196,7 @@ optimizer = optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=a
 # Training
 # 매 epoch마다 ./ckpt 파일에 모델이 저장됩니다.
 # validation dataset 없이 모든 train data를 train하는 방식입니다.
-if args.train :
+if not args.test:
     model.train()
     for epoch in range(args.epochs) :
         epoch_loss = 0.
@@ -216,14 +216,16 @@ if args.train :
     # 모든 epoch이 끝난 뒤 test 진행
     model.eval()
     submission = pd.read_csv(args.test_csv_dir)
-    for iter, (image, label) in enumerate(test_dataloader):
+    for iter, (image, label) in tqdm(enumerate(test_dataloader)):
         pred = model(image)
         pred = nn.Softmax(dim=1)(pred)
         pred = pred.detach().cpu().numpy()
-        landmark_id = np.argmax(pred, axis=1)
-        confidence = pred[0,landmark_id]
-        submission.loc[iter, 'landmark_id'] = landmark_id
-        submission.loc[iter, 'conf'] = confidence
+        landmark_ids = np.argmax(pred, axis=1)
+        for offset, landmark_id in enumerate(landmark_ids):
+            confidence = pred[offset, landmark_id]
+            cur_idx = (iter*args.batch_size) + offset
+            submission.loc[cur_idx, 'landmark_id'] = landmark_id
+            submission.loc[cur_idx, 'conf'] = confidence
     submission.to_csv(args.test_csv_submission_dir, index=False)
 
 # Test
@@ -232,14 +234,17 @@ if args.train :
 # 현재 batch=1로 불러와서 조금 느릴 수 있습니다.
 else :
     model.load_state_dict(torch.load(args.model_dir + "epoch_{0:03}.pth".format(args.load_epoch)))
+    print(f'Loaded {args.load_epoch} epoch ckpt..')
     model.eval()
     submission = pd.read_csv(args.test_csv_dir)
-    for iter, (image, label) in enumerate(test_dataloader):
+    for iter, (image, label) in enumerate(tqdm(test_dataloader)):
         pred = model(image)
         pred = nn.Softmax(dim=1)(pred)
         pred = pred.detach().cpu().numpy()
-        landmark_id = np.argmax(pred, axis=1)
-        confidence = pred[0,landmark_id]
-        submission.loc[iter, 'landmark_id'] = landmark_id
-        submission.loc[iter, 'conf'] = confidence
+        landmark_ids = np.argmax(pred, axis=1)
+        for offset, landmark_id in enumerate(landmark_ids):
+            confidence = pred[offset, landmark_id]
+            cur_idx = (iter*args.batch_size) + offset
+            submission.loc[cur_idx, 'landmark_id'] = landmark_id
+            submission.loc[cur_idx, 'conf'] = confidence
     submission.to_csv(args.test_csv_submission_dir, index=False)
