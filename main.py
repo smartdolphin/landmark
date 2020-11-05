@@ -277,10 +277,13 @@ class EfficientNetEncoderHead(nn.Module):
         self.base = EfficientNet.from_pretrained(f'efficientnet-b{self.depth}')
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.output_filter = self.base._fc.in_features
+        '''
         self.classifier = nn.Sequential(
             nn.Dropout(dropout),
             nn.Linear(self.output_filter, num_classes)
         )
+        '''
+        self.classifier = nn.Linear(self.output_filter, num_classes)
 
     def forward(self, x):
         x = self.base.extract_features(x)
@@ -301,8 +304,8 @@ def radam(parameters, lr=1e-3, betas=(0.9, 0.999), eps=1e-3, weight_decay=0):
                                  weight_decay=weight_decay)
 
 criterion = nn.CrossEntropyLoss()
-#optimizer = optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=args.wd)
-optimizer = radam(model.parameters(), lr=args.learning_rate, weight_decay=args.wd)
+optimizer = optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=args.wd)
+#optimizer = radam(model.parameters(), lr=args.learning_rate, weight_decay=args.wd)
 scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=len(train_loader)*args.epochs, eta_min=1e-6)
 
 # Training
