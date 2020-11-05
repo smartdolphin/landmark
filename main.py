@@ -39,6 +39,7 @@ parser.add_argument('--test_csv_exist_dir', dest='test_csv_exist_dir', default="
 
 parser.add_argument('--test_csv_submission_dir', dest='test_csv_submission_dir', default="./public/my_submission.csv")
 parser.add_argument('--model_dir', dest='model_dir', default="./ckpt/")
+parser.add_argument('--resume', dest='resume', default=None)
 
 parser.add_argument('--image_size', dest='image_size', type=int, default=224)
 parser.add_argument('--epochs', dest='epochs', type=int, default=100)
@@ -314,7 +315,14 @@ if not args.test:
 
     model.train()
     end = time.time()
-    for epoch in range(args.epochs) :
+    start_epoch = 0
+    if args.resume is not None:
+        model.load_state_dict(torch.load(args.resume))
+        start_epoch = int(args.resume[-7:-4])
+        print(f'Loaded {start_epoch} epoch..')
+        start_epoch += 1
+
+    for epoch in range(start_epoch, args.epochs) :
         num_correct, num_cnt = 0, 0
         for iter, (image, label) in enumerate(train_loader) :
             image = image.cuda()
@@ -325,26 +333,18 @@ if not args.test:
             loss.backward()
             optimizer.step()
             scheduler.step()
-            '''
-            num_correct += torch.sum(pred == label.data)
+            num_correct += torch.sum(pred.max(1)[1] == label.data)
             num_cnt += len(label)
             score = (num_correct.double()/num_cnt).cpu() * 100
-            print(f'epoch : {epoch} step : [{iter}/{len(train_loader)}] loss : {loss.detach().item()}, acc : {score}')
-            '''
-            print(f'epoch : {epoch} step : [{iter}/{len(train_loader)}] loss : {loss.detach().item()}')
             losses.update(loss.data.item(), image.size(0))
             batch_time.update(time.time() - end)
-            #avg_score.update(score)
+            avg_score.update(score)
             end = time.time()
-            '''
             if iter % args.log_freq == 0:
-                print(f'{epoch} [{iter}]\t'
+                print(f'epoch : {epoch} step : [{iter}/{len(train_loader)}]\t'
                       f'time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                       f'loss {losses.val:.4f} ({losses.avg:.4f})\t'
                       f'acc {avg_score.val:.4f} ({avg_score.avg:.4f})')
-            '''
-        print('\nepoch : {0} epoch loss : {1}\n'.format(epoch, losses.avg))
-
         torch.save(model.state_dict(), os.path.join(args.model_dir, "epoch_{0:03}.pth".format(epoch)))
     # 모든 epoch이 끝난 뒤 test 진행
     model.eval()
