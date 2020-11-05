@@ -268,7 +268,7 @@ class Network(nn.Module) :
         return x
 
 #model = Network()
-model = WRN(width=2, num_classes=1049, dropout=0.5)
+#model = WRN(width=2, num_classes=1049, dropout=0.5)
 
 class EfficientNetEncoderHead(nn.Module):
     def __init__(self, depth, num_classes, dropout=0.5):
@@ -285,12 +285,11 @@ class EfficientNetEncoderHead(nn.Module):
         x = self.classifier(x)
         return x
 
-
-#model = EfficientNetEncoderHead(depth=0, num_classes=1049)
+model = EfficientNetEncoderHead(depth=0, num_classes=1049)
 model.cuda()
 
 criterion = nn.CrossEntropyLoss()
-#optimizer = optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=args.wd)
+optimizer = optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=args.wd)
 
 def radam(parameters, lr=1e-3, betas=(0.9, 0.999), eps=1e-3, weight_decay=0):
     if isinstance(betas, str):
@@ -300,7 +299,7 @@ def radam(parameters, lr=1e-3, betas=(0.9, 0.999), eps=1e-3, weight_decay=0):
                                  betas=betas,
                                  eps=eps,
                                  weight_decay=weight_decay)
-optimizer = radam(model.parameters(), weight_decay=1e-4)
+#optimizer = radam(model.parameters(), weight_decay=1e-4)
 scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=len(train_loader)*args.epochs, eta_min=1e-6)
 
 # Training
@@ -366,11 +365,13 @@ if not args.test:
 # Softmax로 confidence score를 계산하고, argmax로 class를 추정하여 csv 파일로 저장합니다.
 # 현재 batch=1로 불러와서 조금 느릴 수 있습니다.
 else :
-    model.load_state_dict(os.path.join(torch.load(args.model_dir, "epoch_{0:03}.pth".format(args.load_epoch))))
+    model.load_state_dict(torch.load(os.path.join(args.model_dir, f'epoch_{args.load_epoch:03}.pth')))
     print(f'Loaded {args.load_epoch} epoch ckpt..')
     model.eval()
     submission = pd.read_csv(args.test_csv_dir)
     for iter, (image, label) in enumerate(tqdm(test_loader)):
+        image = image.cuda()
+        label = label.cuda()
         pred = model(image)
         pred = nn.Softmax(dim=1)(pred)
         pred = pred.detach().cpu().numpy()
