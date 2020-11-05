@@ -216,7 +216,7 @@ train_transform = albumentations.Compose([
         albumentations.ShiftScaleRotate()
     ], p=1),
     albumentations.Normalize(mean=[0.4452, 0.4457, 0.4464],
-                            std=[0.2592, 0.2596, 0.2600]),
+                             std=[0.2592, 0.2596, 0.2600]),
     ToTensorV2(),
 ])
 
@@ -224,7 +224,7 @@ test_transform = albumentations.Compose([
     albumentations.Resize(args.image_size, args.image_size),
     albumentations.RandomCrop(args.image_size, args.image_size),
     albumentations.Normalize(mean=[0.4452, 0.4457, 0.4464],
-                            std=[0.2592, 0.2596, 0.2600]),
+                             std=[0.2592, 0.2596, 0.2600]),
     ToTensorV2(),
 ])
 
@@ -277,7 +277,10 @@ class EfficientNetEncoderHead(nn.Module):
         self.base = EfficientNet.from_pretrained(f'efficientnet-b{self.depth}')
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.output_filter = self.base._fc.in_features
-        self.classifier = nn.Linear(self.output_filter, num_classes)
+        self.classifier = nn.Sequential(
+            nn.Dropout(dropout),
+            nn.Linear(self.output_filter, num_classes)
+        )
 
     def forward(self, x):
         x = self.base.extract_features(x)
@@ -288,9 +291,6 @@ class EfficientNetEncoderHead(nn.Module):
 model = EfficientNetEncoderHead(depth=0, num_classes=1049)
 model.cuda()
 
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=args.wd)
-
 def radam(parameters, lr=1e-3, betas=(0.9, 0.999), eps=1e-3, weight_decay=0):
     if isinstance(betas, str):
         betas = eval(betas)
@@ -299,7 +299,10 @@ def radam(parameters, lr=1e-3, betas=(0.9, 0.999), eps=1e-3, weight_decay=0):
                                  betas=betas,
                                  eps=eps,
                                  weight_decay=weight_decay)
-#optimizer = radam(model.parameters(), weight_decay=1e-4)
+
+criterion = nn.CrossEntropyLoss()
+#optimizer = optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=args.wd)
+optimizer = radam(model.parameters(), lr=args.learning_rate, weight_decay=args.wd)
 scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=len(train_loader)*args.epochs, eta_min=1e-6)
 
 # Training
@@ -349,6 +352,7 @@ if not args.test:
     model.eval()
     submission = pd.read_csv(args.test_csv_dir)
     for iter, (image, label) in tqdm(enumerate(test_loader)):
+        image = image.cuda()
         pred = model(image)
         pred = nn.Softmax(dim=1)(pred)
         pred = pred.detach().cpu().numpy()
@@ -371,7 +375,6 @@ else :
     submission = pd.read_csv(args.test_csv_dir)
     for iter, (image, label) in enumerate(tqdm(test_loader)):
         image = image.cuda()
-        label = label.cuda()
         pred = model(image)
         pred = nn.Softmax(dim=1)(pred)
         pred = pred.detach().cpu().numpy()
