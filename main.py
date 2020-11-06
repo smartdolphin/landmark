@@ -19,7 +19,7 @@ from torch.nn import Conv2d, AdaptiveAvgPool2d, Linear
 from torch.nn.parameter import Parameter
 from torch.utils.data.sampler import BatchSampler, RandomSampler
 import torch.nn.functional as F
-import albumentations
+import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import torch_optimizer
 
@@ -43,6 +43,7 @@ parser.add_argument('--model_dir', dest='model_dir', default="./ckpt/")
 parser.add_argument('--resume', dest='resume', default=None)
 
 parser.add_argument('--n_classes', dest='n_classes', type=int, default=1049)
+parser.add_argument('--max_size', dest='max_size', type=int, default=256)
 parser.add_argument('--image_size', dest='image_size', type=int, default=224)
 parser.add_argument('--epochs', dest='epochs', type=int, default=100)
 parser.add_argument('--learning_rate', dest='learning_rate', type=float, default=0.001)
@@ -52,7 +53,7 @@ parser.add_argument('--batch_size', dest='batch_size', type=int, default=64)
 parser.add_argument('--test', dest='test', action='store_true')
 parser.add_argument('--load_epoch', dest='load_epoch', type=int, default=29)
 parser.add_argument('--gpu', type=str, default='0')
-parser.add_argument('--num_workers', dest='num_workers', type=int, default=4)
+parser.add_argument('--num_workers', dest='num_workers', type=int, default=16)
 parser.add_argument('--log_freq', dest='log_freq', type=int, default=10)
 
 parser.add_argument('--depth', dest='depth', type=int, default=3)
@@ -214,24 +215,24 @@ def collate_fn_test(batch):
     return torch.tensor(image).float().cuda(), label
 
 # Augmentation
-train_transform = albumentations.Compose([
-    albumentations.Resize(args.image_size, args.image_size),
-    albumentations.RandomCrop(args.image_size, args.image_size),
-    albumentations.HorizontalFlip(),
-    albumentations.OneOf([
-        albumentations.HueSaturationValue(),
-        albumentations.ShiftScaleRotate()
+train_transform = A.Compose([
+    A.SmallestMaxSize(args.max_size),
+    A.RandomCrop(args.image_size, args.image_size, p=1.),
+    A.HorizontalFlip(p=0.5),
+    A.OneOf([
+        A.HueSaturationValue(),
+        A.ShiftScaleRotate()
     ], p=1),
-    albumentations.Normalize(mean=[0.4452, 0.4457, 0.4464],
-                             std=[0.2592, 0.2596, 0.2600]),
+    A.Normalize(mean=[0.4452, 0.4457, 0.4464],
+                 std=[0.2592, 0.2596, 0.2600]),
     ToTensorV2(),
 ])
 
-test_transform = albumentations.Compose([
-    albumentations.Resize(args.image_size, args.image_size),
-    albumentations.RandomCrop(args.image_size, args.image_size),
-    albumentations.Normalize(mean=[0.4452, 0.4457, 0.4464],
-                             std=[0.2592, 0.2596, 0.2600]),
+test_transform = A.Compose([
+    A.SmallestMaxSize(args.max_size),
+    A.CenterCrop(args.image_size, args.image_size, p=1.),
+    A.Normalize(mean=[0.4452, 0.4457, 0.4464],
+                 std=[0.2592, 0.2596, 0.2600]),
     ToTensorV2(),
 ])
 
