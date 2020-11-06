@@ -2,7 +2,7 @@
 Development of Artificial Intelligence Algorithm to Classification Landmark Images from Large-Scale Images [[link]](https://dacon.io/competitions/official/235585/overview/).
 
 ## Extract korea landmark data
-Please extract image data in the `public`<br>
+Please download and extract image data in the `public`<br>
 
     $ cd landmark
     $ mkdir public
