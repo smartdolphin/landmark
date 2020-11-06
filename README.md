@@ -32,7 +32,7 @@ Run commands as follows:
 
 ````bash
 $ cd landmark
-$ python main.py --epochs 100 --batch_size 400 --gpu 0 --image_size 64 --model_dir save_model --depth 0
+$ python main.py --gpu 0 --epochs 100 --batch_size 80 --image_size 224 --model_dir save/test_01 --depth 0
 ````
 
 #### Testing
@@ -41,7 +41,7 @@ Run commands as follows:
 
 ````bash
 $ cd landmark
-$ python main.py --batch_size 400 --gpu 0 --image_size 64 --load_epoch 99 --test --model_dir save_model --test_csv_submission_dir my_submission.csv
+$ python main.py --gpu 0 --load_epoch 99 --batch_size 80 --image_size 224 --test --model_dir save/test_01 --test_csv_submission_dir my_submission.csv
 ````
 
 ## Requirements
