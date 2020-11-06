@@ -1,9 +1,11 @@
 # coding: utf-8
+from loss import *
 
 import pandas as pd
 import numpy as np
 import os
 import time
+import math
 
 import argparse
 import torch
@@ -14,6 +16,7 @@ from tqdm import tqdm
 from torch.utils.data import Dataset, DataLoader
 from torch import nn, optim
 from torch.nn import Conv2d, AdaptiveAvgPool2d, Linear
+from torch.nn.parameter import Parameter
 from torch.utils.data.sampler import BatchSampler, RandomSampler
 import torch.nn.functional as F
 import albumentations
@@ -21,8 +24,6 @@ from albumentations.pytorch import ToTensorV2
 import torch_optimizer
 
 from efficientnet_pytorch import EfficientNet
-from wrn import WRN
-
 
 # arguments
 # train_csv_exist, test_csv_exist는 glob.glob이 생각보다 시간을 많이 잡아먹어서 iteration 시간을 줄이기 위해 생성되는 파일입니다.
@@ -41,6 +42,7 @@ parser.add_argument('--test_csv_submission_dir', dest='test_csv_submission_dir',
 parser.add_argument('--model_dir', dest='model_dir', default="./ckpt/")
 parser.add_argument('--resume', dest='resume', default=None)
 
+parser.add_argument('--n_classes', dest='n_classes', type=int, default=1049)
 parser.add_argument('--image_size', dest='image_size', type=int, default=224)
 parser.add_argument('--epochs', dest='epochs', type=int, default=100)
 parser.add_argument('--learning_rate', dest='learning_rate', type=float, default=0.001)
@@ -52,6 +54,11 @@ parser.add_argument('--load_epoch', dest='load_epoch', type=int, default=29)
 parser.add_argument('--gpu', type=str, default='0')
 parser.add_argument('--num_workers', dest='num_workers', type=int, default=4)
 parser.add_argument('--log_freq', dest='log_freq', type=int, default=10)
+
+parser.add_argument('--depth', dest='depth', type=int, default=3)
+parser.add_argument('--arcface_s', dest='arcface_s', type=float, default=35)
+parser.add_argument('--arcface_m', dest='arcface_m', type=float, default=0.4)
+parser.add_argument('--crit', dest='crit', type=str, default='bce')
 args = parser.parse_args()
 
 
@@ -250,32 +257,43 @@ test_loader = DataLoader(test_dataset,
                          drop_last=False)
 
 # Model
-# 여기서는 간단한 CNN 3개짜리 모델을 생성하였습니다.
-class Network(nn.Module) :
-    def __init__(self) :
-        super(Network, self).__init__()
-        self.conv1 = Conv2d(3, 64, (3,3), (1,1), (1,1))
-        self.conv2 = Conv2d(64, 64, (3,3), (1,1), (1,1))
-        self.conv3 = Conv2d(64, 64, (3,3), (1,1), (1,1))
-        self.fc = Linear(64, 1049)
+class ArcMarginProduct(nn.Module):
+    def __init__(self, in_features, out_features):
+        super(ArcMarginProduct, self).__init__()
+        self.weight = Parameter(torch.FloatTensor(out_features, in_features))
+        self.reset_parameters()
 
-    def forward(self, x) :
-        x = F.relu(self.conv1(x))
-        x = F.relu(self.conv2(x))
-        x = F.relu(self.conv3(x))
-        x = AdaptiveAvgPool2d(1)(x).squeeze()
-        x = self.fc(x)
-        return x
+    def reset_parameters(self):
+        nn.init.xavier_uniform_(self.weight)
 
-#model = Network()
-#model = WRN(width=2, num_classes=1049, dropout=0.5)
+    def forward(self, features):
+        cosine = F.linear(F.normalize(features), F.normalize(self.weight))
+        return cosine
+
+
+class GeM(nn.Module):
+    def __init__(self, p=3, eps=1e-6):
+        super(GeM,self).__init__()
+        self.p = nn.Parameter(torch.ones(1)*p)
+        self.eps = eps
+
+    def forward(self, x):
+        return self.gem(x, p=self.p, eps=self.eps)
+
+    def gem(self, x, p=3, eps=1e-6):
+        return F.avg_pool2d(x.clamp(min=eps).pow(p), (x.size(-2), x.size(-1))).pow(1./p)
+
+    def __repr__(self):
+        return self.__class__.__name__ + '(' + 'p=' + '{:.4f}'.format(self.p.data.tolist()[0]) + ', ' + 'eps=' + str(self.eps) + ')'
+
 
 class EfficientNetEncoderHead(nn.Module):
-    def __init__(self, depth, num_classes, dropout=0.5):
+    def __init__(self, depth, num_classes, feat_dim=512):
         super(EfficientNetEncoderHead, self).__init__()
         self.depth = depth
         self.base = EfficientNet.from_pretrained(f'efficientnet-b{self.depth}')
-        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.gem = GeM()
+#         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.output_filter = self.base._fc.in_features
         '''
         self.classifier = nn.Sequential(
@@ -283,15 +301,21 @@ class EfficientNetEncoderHead(nn.Module):
             nn.Linear(self.output_filter, num_classes)
         )
         '''
-        self.classifier = nn.Linear(self.output_filter, num_classes)
+        self.fc = nn.Linear(self.output_filter, feat_dim)
+        self.batchnorm = nn.BatchNorm1d(feat_dim)
+        self.activation = torch.nn.PReLU()
+        self.head = ArcMarginProduct(feat_dim, num_classes)
 
-    def forward(self, x):
+    def forward(self, x, label=None):
         x = self.base.extract_features(x)
-        x = self.avg_pool(x).squeeze(-1).squeeze(-1)
-        x = self.classifier(x)
-        return x
+        x = self.gem(x).squeeze()
+        x = self.fc(x)
+        x = self.batchnorm(x)
+        x = self.activation(x)
+        logits = self.head(x)
+        return logits
 
-model = EfficientNetEncoderHead(depth=0, num_classes=1049)
+model = EfficientNetEncoderHead(depth=args.depth, num_classes=args.n_classes)
 model.cuda()
 
 def radam(parameters, lr=1e-3, betas=(0.9, 0.999), eps=1e-3, weight_decay=0):
@@ -303,9 +327,11 @@ def radam(parameters, lr=1e-3, betas=(0.9, 0.999), eps=1e-3, weight_decay=0):
                                  eps=eps,
                                  weight_decay=weight_decay)
 
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=args.wd)
-#optimizer = radam(model.parameters(), lr=args.learning_rate, weight_decay=args.wd)
+#criterion = nn.CrossEntropyLoss()
+criterion = ArcFaceLoss(args.arcface_s, args.arcface_m, crit=args.crit)
+#optimizer = optim.SGD(model.parameters(), lr=args.learning_rate, momentum=0.9, weight_decay=args.wd, nesterov=True)
+#optimizer = optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=args.wd)
+optimizer = radam(model.parameters(), lr=args.learning_rate, weight_decay=args.wd)
 scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=len(train_loader)*args.epochs, eta_min=1e-6)
 
 # Training
@@ -332,8 +358,9 @@ if not args.test:
         for iter, (image, label) in enumerate(train_loader) :
             image = image.cuda()
             label = label.cuda()
-            pred = model(image)
-            loss = criterion(input=pred, target=label)
+            pred = model(image, label)
+            #loss = criterion(input=pred, target=label)
+            loss = loss_fn(criterion, label, pred, args.n_classes)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
