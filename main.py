@@ -17,7 +17,8 @@ from torch.utils.data import Dataset, DataLoader
 from torch import nn, optim
 from torch.nn import Conv2d, AdaptiveAvgPool2d, Linear
 from torch.nn.parameter import Parameter
-from torch.utils.data.sampler import BatchSampler, RandomSampler
+from torch.utils.data.sampler import BatchSampler, RandomSampler, SequentialSampler
+from torch.utils.data.dataset import random_split
 import torch.nn.functional as F
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
@@ -201,19 +202,6 @@ class AverageMeter(object):
         self.avg = self.sum / self.count
 
 
-# DataLoader 생성을 위한 collate_fn
-def collate_fn(batch):
-    image = [x['image'] for x in batch]
-    label = [x['label'] for x in batch]
-
-    return torch.tensor(image).float().cuda(), torch.tensor(label).long().cuda()
-
-def collate_fn_test(batch):
-    image = [x['image'] for x in batch]
-    label = [x['label'] for x in batch]
-
-    return torch.tensor(image).float().cuda(), label
-
 # Augmentation
 train_transform = A.Compose([
     A.SmallestMaxSize(args.max_size),
@@ -237,24 +225,36 @@ test_transform = A.Compose([
 ])
 
 # Dataset, Dataloader 정의
-train_dataset = TrainDataset(args, transform=train_transform)
+dataset = TrainDataset(args, transform=train_transform)
+train_size = int(len(dataset) * 0.8)
+val_size = len(dataset) - train_size
+train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+val_dataset.transform = test_transform
 test_dataset = TestDataset(args, transform=test_transform)
 
 train_sampler = RandomSampler(train_dataset)
-test_sampler = RandomSampler(test_dataset)
-
-train_batch_sampler = BatchSampler(train_sampler, args.batch_size, drop_last=True)
-test_batch_sampler = BatchSampler(test_sampler, args.batch_size, drop_last=False)
+val_sampler = SequentialSampler(val_dataset)
+test_sampler = SequentialSampler(test_dataset)
 
 train_loader = DataLoader(train_dataset,
-                          batch_sampler=train_batch_sampler,
+                          sampler=train_sampler,
+                          batch_size=args.batch_size,
                           num_workers=args.num_workers,
-                          pin_memory=True)
+                          pin_memory=False,
+                          drop_last=True)
+val_loader = DataLoader(val_dataset,
+                        sampler=val_sampler,
+                        batch_size=args.batch_size//2,
+                        shuffle=False,
+                        num_workers=args.num_workers,
+                        pin_memory=False,
+                        drop_last=False)
 test_loader = DataLoader(test_dataset,
-                         batch_size=args.batch_size,
+                         sampler=test_sampler,
+                         batch_size=args.batch_size//2,
                          shuffle=False,
                          num_workers=args.num_workers,
-                         pin_memory=True,
+                         pin_memory=False,
                          drop_last=False)
 
 # Model
@@ -294,25 +294,18 @@ class EfficientNetEncoderHead(nn.Module):
         self.depth = depth
         self.base = EfficientNet.from_pretrained(f'efficientnet-b{self.depth}')
         self.gem = GeM()
-#         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.output_filter = self.base._fc.in_features
-        '''
-        self.classifier = nn.Sequential(
-            nn.Dropout(dropout),
-            nn.Linear(self.output_filter, num_classes)
+        self.neck = nn.Sequential(
+            nn.Linear(self.output_filter, feat_dim),
+            nn.BatchNorm1d(feat_dim),
+            torch.nn.PReLU(),
         )
-        '''
-        self.fc = nn.Linear(self.output_filter, feat_dim)
-        self.batchnorm = nn.BatchNorm1d(feat_dim)
-        self.activation = torch.nn.PReLU()
         self.head = ArcMarginProduct(feat_dim, num_classes)
 
     def forward(self, x, label=None):
         x = self.base.extract_features(x)
         x = self.gem(x).squeeze()
-        x = self.fc(x)
-        x = self.batchnorm(x)
-        x = self.activation(x)
+        x = self.neck(x)
         logits = self.head(x)
         return logits
 
@@ -327,6 +320,12 @@ def radam(parameters, lr=1e-3, betas=(0.9, 0.999), eps=1e-3, weight_decay=0):
                                  betas=betas,
                                  eps=eps,
                                  weight_decay=weight_decay)
+
+def accuracy(pred, label):
+    num_correct = torch.sum(pred.max(1)[1] == label.data)
+    num_cnt = len(label)
+    acc = (num_correct.double()/num_cnt).cpu() * 100
+    return acc
 
 #criterion = nn.CrossEntropyLoss()
 criterion = ArcFaceLoss(args.arcface_s, args.arcface_m, crit=args.crit)
@@ -344,8 +343,8 @@ if not args.test:
     avg_score = AverageMeter()
 
     train_loss, train_acc = [], []
+    best_acc, best_epoch = 0, 0
 
-    model.train()
     end = time.time()
     start_epoch = 0
     if args.resume is not None:
@@ -354,35 +353,54 @@ if not args.test:
         print(f'Loaded {start_epoch} epoch..')
         start_epoch += 1
 
-    for epoch in range(start_epoch, args.epochs) :
-        num_correct, num_cnt = 0, 0
-        for iter, (image, label) in enumerate(train_loader) :
+    for epoch in range(start_epoch, args.epochs):
+        for iter, (image, label) in enumerate(train_loader):
             image = image.cuda()
             label = label.cuda()
             pred = model(image, label)
-            #loss = criterion(input=pred, target=label)
             loss = loss_fn(criterion, label, pred, args.n_classes)
+            acc = accuracy(pred, label)
+
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             scheduler.step()
-            num_correct += torch.sum(pred.max(1)[1] == label.data)
-            num_cnt += len(label)
-            score = (num_correct.double()/num_cnt).cpu() * 100
+
             losses.update(loss.data.item(), image.size(0))
             batch_time.update(time.time() - end)
-            avg_score.update(score)
+            avg_score.update(acc)
+
             end = time.time()
             if iter % args.log_freq == 0:
                 print(f'epoch : {epoch} step : [{iter}/{len(train_loader)}]\t'
                       f'time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                       f'loss {losses.val:.4f} ({losses.avg:.4f})\t'
                       f'acc {avg_score.val:.4f} ({avg_score.avg:.4f})')
+        # validation
+        model.eval()
+        val_start = time.time()
+        val_time = 0
+        num_correct, num_cnt = 0, 0
+        for i, (image, label) in enumerate(tqdm(val_loader)):
+            image = image.cuda()
+            label = label.cuda()
+            pred = model(image)
+            num_correct += torch.sum(pred.max(1)[1] == label.data)
+            num_cnt += len(label)
+        val_acc = (num_correct.double()/num_cnt).cpu() * 100
+        if val_acc > best_acc:
+            best_acc = val_acc
+            best_epoch = epoch
+        print(f'epoch : {epoch} [{len(val_loader)}]\t'
+              f'time {time.time()-val_start:.3f}\t'
+              f'val acc {val_acc:.4f}\t'
+              f'best acc {best_acc:.4f} ({best_epoch})\t')
         torch.save(model.state_dict(), os.path.join(args.model_dir, "epoch_{0:03}.pth".format(epoch)))
+        model.train()
     # 모든 epoch이 끝난 뒤 test 진행
     model.eval()
     submission = pd.read_csv(args.test_csv_dir)
-    for iter, (image, label) in tqdm(enumerate(test_loader)):
+    for iter, (image, label) in enumerate(tqdm(test_loader)):
         image = image.cuda()
         pred = model(image)
         pred = nn.Softmax(dim=1)(pred)
