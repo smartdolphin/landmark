@@ -391,6 +391,7 @@ if not args.test:
         if val_acc > best_acc:
             best_acc = val_acc
             best_epoch = epoch
+            torch.save(model.state_dict(), os.path.join(args.model_dir, 'best_model.pth'))
         print(f'epoch : {epoch} [{len(val_loader)}]\t'
               f'time {time.time()-val_start:.3f}\t'
               f'val acc {val_acc:.4f}\t'
@@ -399,6 +400,7 @@ if not args.test:
         model.train()
     # 모든 epoch이 끝난 뒤 test 진행
     model.eval()
+    model.load_state_dict(torch.load(os.path.join(args.model_dir, 'best_model.pth')))
     submission = pd.read_csv(args.test_csv_dir)
     for iter, (image, label) in enumerate(tqdm(test_loader)):
         image = image.cuda()
