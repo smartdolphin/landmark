@@ -251,7 +251,7 @@ val_loader = DataLoader(val_dataset,
                         drop_last=False)
 test_loader = DataLoader(test_dataset,
                          sampler=test_sampler,
-                         batch_size=args.batch_size//2,
+                         batch_size=args.batch_size,
                          shuffle=False,
                          num_workers=args.num_workers,
                          pin_memory=False,
@@ -402,6 +402,7 @@ if not args.test:
     model.eval()
     model.load_state_dict(torch.load(os.path.join(args.model_dir, 'best_model.pth')))
     submission = pd.read_csv(args.test_csv_dir)
+    print(f'Loaded {args.load_epoch} epoch ckpt..')
     for iter, (image, label) in enumerate(tqdm(test_loader)):
         image = image.cuda()
         pred = model(image)
@@ -414,6 +415,7 @@ if not args.test:
             submission.loc[cur_idx, 'landmark_id'] = landmark_id
             submission.loc[cur_idx, 'conf'] = confidence
     submission.to_csv(args.test_csv_submission_dir, index=False)
+    print(f'Save submission: {len(submission)}')
 
 # Test
 # argument의 --train을 False로 두면 Test만 진행합니다.
@@ -436,3 +438,4 @@ else :
             submission.loc[cur_idx, 'landmark_id'] = landmark_id
             submission.loc[cur_idx, 'conf'] = confidence
     submission.to_csv(args.test_csv_submission_dir, index=False)
+    print(f'Save submission: {len(submission)}')
