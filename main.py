@@ -205,8 +205,8 @@ class AverageMeter(object):
 # Augmentation
 train_transform = A.Compose([
     A.SmallestMaxSize(args.max_size),
-    A.RandomCrop(args.image_size, args.image_size, p=1.),
-    A.HorizontalFlip(p=0.5),
+    #A.RandomCrop(args.image_size, args.image_size, p=1.),
+    #A.HorizontalFlip(p=0.5),
     A.OneOf([
         A.HueSaturationValue(),
         A.ShiftScaleRotate()
@@ -218,7 +218,7 @@ train_transform = A.Compose([
 
 test_transform = A.Compose([
     A.SmallestMaxSize(args.max_size),
-    A.CenterCrop(args.image_size, args.image_size, p=1.),
+    #A.CenterCrop(args.image_size, args.image_size, p=1.),
     A.Normalize(mean=[0.4452, 0.4457, 0.4464],
                  std=[0.2592, 0.2596, 0.2600]),
     ToTensorV2(),
