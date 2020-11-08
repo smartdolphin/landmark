@@ -341,7 +341,8 @@ if not args.test:
     batch_time = AverageMeter()
     losses = AverageMeter()
     avg_score = AverageMeter()
-
+    acc_score = AverageMeter()
+    
     train_loss, train_acc = [], []
     best_acc, best_epoch = 0, 0
 
@@ -368,14 +369,18 @@ if not args.test:
 
             losses.update(loss.data.item(), image.size(0))
             batch_time.update(time.time() - end)
-            avg_score.update(acc)
+            acc_score.update(acc)
 
+            confs, predicts = torch.max(pred.detach(), dim=1)
+            avg_score.update(GAP(predicts, confs, label))
+            
             end = time.time()
             if iter % args.log_freq == 0:
                 print(f'epoch : {epoch} step : [{iter}/{len(train_loader)}]\t'
                       f'time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                       f'loss {losses.val:.4f} ({losses.avg:.4f})\t'
-                      f'acc {avg_score.val:.4f} ({avg_score.avg:.4f})')
+                      f'acc {acc_score.val:.4f} ({acc_score.avg:.4f})\t'
+                      f'GAP {avg_score.val:.4f} ({avg_score.avg:.4f})')
         # validation
         model.eval()
         val_start = time.time()
