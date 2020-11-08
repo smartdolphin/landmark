@@ -52,7 +52,7 @@ parser.add_argument('--wd', dest='wd', type=float, default=1e-5)
 parser.add_argument('--batch_size', dest='batch_size', type=int, default=64)
 
 parser.add_argument('--test', dest='test', action='store_true')
-parser.add_argument('--load_epoch', dest='load_epoch', type=int, default=29)
+parser.add_argument('--load_epoch', dest='load_epoch', type=int, default=None)
 parser.add_argument('--gpu', type=str, default='0')
 parser.add_argument('--num_workers', dest='num_workers', type=int, default=16)
 parser.add_argument('--log_freq', dest='log_freq', type=int, default=10)
@@ -422,8 +422,13 @@ if not args.test:
 # Softmax로 confidence score를 계산하고, argmax로 class를 추정하여 csv 파일로 저장합니다.
 # 현재 batch=1로 불러와서 조금 느릴 수 있습니다.
 else :
-    model.load_state_dict(torch.load(os.path.join(args.model_dir, f'epoch_{args.load_epoch:03}.pth')))
-    print(f'Loaded {args.load_epoch} epoch ckpt..')
+    if args.load_epoch is not None:
+        ckpt = f'epoch_{args.load_epoch:03}.pth'
+        print(f'Loaded {args.load_epoch} epoch ckpt..')
+    else:
+        ckpt = 'best_model.pth'
+        print(f'Loaded best epoch ..')
+    model.load_state_dict(torch.load(os.path.join(args.model_dir, ckpt)))
     model.eval()
     submission = pd.read_csv(args.test_csv_dir)
     for iter, (image, label) in enumerate(tqdm(test_loader)):
