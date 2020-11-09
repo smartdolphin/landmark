@@ -226,7 +226,8 @@ test_transform = A.Compose([
 
 # Dataset, Dataloader 정의
 dataset = TrainDataset(args, transform=train_transform)
-train_size = int(len(dataset) * 0.8)
+# Add remained last one data
+train_size = int(len(dataset) * 0.8) + 1
 val_size = len(dataset) - train_size
 train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
 val_dataset.transform = test_transform
@@ -244,7 +245,7 @@ train_loader = DataLoader(train_dataset,
                           drop_last=True)
 val_loader = DataLoader(val_dataset,
                         sampler=val_sampler,
-                        batch_size=args.batch_size//2,
+                        batch_size=args.batch_size,
                         shuffle=False,
                         num_workers=args.num_workers,
                         pin_memory=False,
