@@ -59,6 +59,7 @@ parser.add_argument('--num_workers', dest='num_workers', type=int, default=16)
 parser.add_argument('--log_freq', dest='log_freq', type=int, default=10)
 
 parser.add_argument('--depth', dest='depth', type=int, default=3)
+parser.add_argument('--feat_dim', dest='feat_dim', type=int, default=256)
 parser.add_argument('--arcface_s', dest='arcface_s', type=float, default=35)
 parser.add_argument('--arcface_m', dest='arcface_m', type=float, default=0.4)
 parser.add_argument('--crit', dest='crit', type=str, default='bce')
@@ -311,7 +312,7 @@ class EfficientNetEncoderHead(nn.Module):
         logits = self.head(x)
         return logits
 
-model = EfficientNetEncoderHead(depth=args.depth, num_classes=args.n_classes)
+model = EfficientNetEncoderHead(depth=args.depth, num_classes=args.n_classes, feat_dim=args.feat_dim)
 model.cuda()
 
 def radam(parameters, lr=1e-3, betas=(0.9, 0.999), eps=1e-3, weight_decay=0):
