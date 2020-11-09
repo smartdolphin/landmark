@@ -8,9 +8,8 @@ def GAP(pred: torch.Tensor, target: torch.Tensor) -> float:
     confs, predicts = torch.max(pred.detach(), dim=1)
     _, indices = torch.sort(confs, descending=True)
 
-    confs = confs.cpu().numpy()
-    predicts = predicts[indices].cpu().numpy()
-    target = target[indices].cpu().numpy()
+    predicts = predicts[indices]
+    target = target[indices]
 
     res, true_pos = 0.0, 0
 

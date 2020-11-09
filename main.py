@@ -246,7 +246,7 @@ train_loader = DataLoader(train_dataset,
                           drop_last=True)
 val_loader = DataLoader(val_dataset,
                         sampler=val_sampler,
-                        batch_size=args.batch_size,
+                        batch_size=args.batch_size//2,
                         shuffle=False,
                         num_workers=args.num_workers,
                         pin_memory=False,
@@ -346,7 +346,7 @@ if not args.test:
     gap_score = AverageMeter()
     
     train_loss, train_acc = [], []
-    best_acc, best_epoch = 0, 0
+    best_acc, best_gap, best_epoch, best_gap_epoch = 0, 0, 0, 0
 
     end = time.time()
     start_epoch = 0
@@ -386,21 +386,30 @@ if not args.test:
         val_start = time.time()
         val_time = 0
         num_correct, num_cnt = 0, 0
+        sum_gap = 0
         for i, (image, label) in enumerate(tqdm(val_loader)):
             image = image.cuda()
             label = label.cuda()
             pred = model(image)
             num_correct += torch.sum(pred.max(1)[1] == label.data)
             num_cnt += len(label)
+            sum_gap += GAP(pred, label)
         val_acc = (num_correct.double()/num_cnt).cpu() * 100
+        val_gap = sum_gap /len(val_loader)
         if val_acc > best_acc:
             best_acc = val_acc
             best_epoch = epoch
             torch.save(model.state_dict(), os.path.join(args.model_dir, 'best_model.pth'))
+        if val_gap > best_gap:
+            best_gap = val_gap
+            best_gap_epoch = epoch
+            torch.save(model.state_dict(), os.path.join(args.model_dir, 'best_gap_model.pth'))
         print(f'epoch : {epoch} [{len(val_loader)}]\t'
               f'time {time.time()-val_start:.3f}\t'
               f'val acc {val_acc:.4f}\t'
-              f'best acc {best_acc:.4f} ({best_epoch})\t')
+              f'val gap {val_gap:.4f}\t'
+              f'best acc {best_acc:.4f} ({best_epoch})\t'
+              f'best gap {best_gap:.4f} ({best_gap_epoch})\t')
         torch.save(model.state_dict(), os.path.join(args.model_dir, "epoch_{0:03}.pth".format(epoch)))
         model.train()
     # 모든 epoch이 끝난 뒤 test 진행
