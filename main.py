@@ -25,6 +25,7 @@ from albumentations.pytorch import ToTensorV2
 import torch_optimizer
 
 from efficientnet_pytorch import EfficientNet
+from metric import GAP
 
 # arguments
 # train_csv_exist, test_csv_exist는 glob.glob이 생각보다 시간을 많이 잡아먹어서 iteration 시간을 줄이기 위해 생성되는 파일입니다.
@@ -341,8 +342,8 @@ scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=len(train_load
 if not args.test:
     batch_time = AverageMeter()
     losses = AverageMeter()
-    avg_score = AverageMeter()
     acc_score = AverageMeter()
+    gap_score = AverageMeter()
     
     train_loss, train_acc = [], []
     best_acc, best_epoch = 0, 0
@@ -371,9 +372,7 @@ if not args.test:
             losses.update(loss.data.item(), image.size(0))
             batch_time.update(time.time() - end)
             acc_score.update(acc)
-
-            confs, predicts = torch.max(pred.detach(), dim=1)
-            avg_score.update(GAP(predicts, confs, label))
+            gap_score.update(GAP(pred, label))
             
             end = time.time()
             if iter % args.log_freq == 0:
@@ -381,7 +380,7 @@ if not args.test:
                       f'time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                       f'loss {losses.val:.4f} ({losses.avg:.4f})\t'
                       f'acc {acc_score.val:.4f} ({acc_score.avg:.4f})\t'
-                      f'GAP {avg_score.val:.4f} ({avg_score.avg:.4f})')
+                      f'gap {gap_score.val:.4f} ({gap_score.avg:.4f})')
         # validation
         model.eval()
         val_start = time.time()

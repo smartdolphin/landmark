@@ -1,26 +1,25 @@
 import pandas as pd
 import numpy as np
+import torch
 
-def GAP(predicts: torch.Tensor, confs: torch.Tensor, targets: torch.Tensor) -> float:
+
+def GAP(pred: torch.Tensor, target: torch.Tensor) -> float:
     ''' Simplified GAP@1 metric: only one prediction per sample is supported '''
-    assert len(predicts.shape) == 1
-    assert len(confs.shape) == 1
-    assert len(targets.shape) == 1
-    assert predicts.shape == confs.shape and confs.shape == targets.shape
-
+    confs, predicts = torch.max(pred.detach(), dim=1)
     _, indices = torch.sort(confs, descending=True)
 
     confs = confs.cpu().numpy()
     predicts = predicts[indices].cpu().numpy()
-    targets = targets[indices].cpu().numpy()
+    target = target[indices].cpu().numpy()
 
     res, true_pos = 0.0, 0
 
-    for i, (c, p, t) in enumerate(zip(confs, predicts, targets)):
+    for i, (p, t) in enumerate(zip(predicts, target)):
         rel = int(p == t)
         true_pos += rel
 
         res += true_pos / (i + 1) * rel
 
-    res /= targets.shape[0] # FIXME: incorrect, not all test images depict landmarks
+    res /= target.shape[0] # FIXME: incorrect, not all test images depict landmarks
     return res
+
