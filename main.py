@@ -209,6 +209,7 @@ train_transform = A.Compose([
     A.SmallestMaxSize(args.max_size),
     #A.RandomCrop(args.image_size, args.image_size, p=1.),
     #A.HorizontalFlip(p=0.5),
+    A.Cutout(p=0.5),
     A.OneOf([
         A.HueSaturationValue(),
         A.ShiftScaleRotate()
