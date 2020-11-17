@@ -1,4 +1,4 @@
-# Korea landmark classification AI competition 
+# Korea landmark recognition
 Development of Artificial Intelligence Algorithm to Classification Landmark Images from Large-Scale Images [[link]](https://dacon.io/competitions/official/235585/overview/).
 
 ## Extract korea landmark data
